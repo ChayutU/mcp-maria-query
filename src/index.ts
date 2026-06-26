@@ -8,10 +8,15 @@ import mariadb from "mariadb";
 import dotenv from "dotenv";
 import fs from "fs/promises";
 import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 async function logQuery(sql: string, success: boolean, detail: string) {
   try {
-    const logDir = path.join(process.cwd(), "logs");
+    // Resolve logs directory relative to the compiled build/index.js location (i.e. ../logs relative to src/ or build/)
+    const logDir = path.join(__dirname, "..", "logs");
     await fs.mkdir(logDir, { recursive: true });
     const logFilePath = path.join(logDir, "queries.log");
     const timestamp = new Date().toISOString();
