@@ -6,6 +6,23 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import mariadb from "mariadb";
 import dotenv from "dotenv";
+import fs from "fs/promises";
+import path from "path";
+
+async function logQuery(sql: string, success: boolean, detail: string) {
+  try {
+    const logDir = path.join(process.cwd(), "logs");
+    await fs.mkdir(logDir, { recursive: true });
+    const logFilePath = path.join(logDir, "queries.log");
+    const timestamp = new Date().toISOString();
+    const status = success ? "SUCCESS" : "ERROR";
+    const cleanSql = sql.trim().replace(/\s+/g, " ");
+    const logEntry = `[${timestamp}] [${status}] Query: ${cleanSql} | Detail: ${detail}\n`;
+    await fs.appendFile(logFilePath, logEntry, "utf8");
+  } catch (err) {
+    console.error("Failed to write to log file:", err);
+  }
+}
 
 dotenv.config();
 
@@ -138,15 +155,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           throw new Error("Only read-only queries (SELECT) are allowed.");
         }
 
-        const result = await conn.query(sql);
-        
-        // Handle result serialization (mariadb results are array of objects for SELECT, or OkPacket object for write queries)
-        // BigInt properties must be converted to strings before JSON.stringify
-        const serializedResult = JSON.stringify(
-          result,
-          (key, value) => (typeof value === "bigint" ? value.toString() : value),
-          2
-        );
+        let result;
+        let serializedResult = "";
+        try {
+          result = await conn.query(sql);
+          
+          // Handle result serialization (mariadb results are array of objects for SELECT, or OkPacket object for write queries)
+          // BigInt properties must be converted to strings before JSON.stringify
+          serializedResult = JSON.stringify(
+            result,
+            (key, value) => (typeof value === "bigint" ? value.toString() : value),
+            2
+          );
+          
+          const rowCount = Array.isArray(result) ? `${result.length} rows` : (result && result.affectedRows !== undefined ? `${result.affectedRows} affected` : "N/A");
+          await logQuery(sql, true, `Rows/Info: ${rowCount}`);
+        } catch (error: any) {
+          await logQuery(sql, false, error.message || String(error));
+          throw error;
+        }
 
         return {
           content: [
